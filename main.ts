@@ -3,7 +3,7 @@
  * 
  * This script is responsible for:
  * 1. Preparing the production output directory.
- * 2. Recursively copying the application files (`app/`) and generated screenshots (`screenshots/`) to the output destination.
+ * 2. Guarded copy of application files (`app/`) and screenshots (`screenshots/`) to the output destination.
  * 3. Constructing a project dossier using the vendor `makefun-app` library.
  * 
  * Usage:
@@ -29,6 +29,10 @@ if (!fs.existsSync(outputDir)) {
  * @param {string} dest - The destination directory path.
  */
 const copyRecursive = (src: string, dest: string) => {
+    if (!fs.existsSync(src)) {
+        console.warn(`Source directory not found: ${src}, skipping copy.`);
+        return;
+    }
     if (!fs.existsSync(dest)) {
         fs.mkdirSync(dest, { recursive: true });
     }
@@ -45,13 +49,9 @@ const copyRecursive = (src: string, dest: string) => {
     console.log(`Copied ${src} to ${dest}`);
 };
 
-// Execute copy operations
+// Execute copy operations, guarding the source directories
 copyRecursive('app', path.join(outputDir, 'app'));
-if (fs.existsSync('screenshots')) {
-    copyRecursive('screenshots', path.join(outputDir, 'screenshots'));
-} else {
-    console.warn('Screenshots directory not found, skipping copy.');
-}
+copyRecursive('screenshots', path.join(outputDir, 'screenshots'));
 
 // Define technical capabilities and limits for the dossier
 const caps = {
