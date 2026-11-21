@@ -7,11 +7,6 @@ import fs from 'node:fs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-/**
- * Waits for the local development server to become available.
- * @param {string} url - The URL of the server to check.
- * @param {number} timeout - Maximum time to wait in milliseconds.
- */
 async function waitForServer(url, timeout = 30000) {
     console.log(`Waiting for server at ${url}...`);
     const start = Date.now();
@@ -23,173 +18,155 @@ async function waitForServer(url, timeout = 30000) {
                     else reject();
                 }).on('error', reject);
             });
-            console.log('Server is up!');
             return true;
         } catch (e) {
             await new Promise(r => setTimeout(r, 1000));
         }
     }
-    console.error('Server failed to start within timeout.');
     return false;
 }
 
-/**
- * Main automation function to generate screenshots.
- */
-async function run() {
+async function capture() {
     const port = 8181;
     const server = spawn('node', ['serve.js', '--port', port.toString()], {
         detached: true,
-        stdio: 'inherit'
+        stdio: 'ignore'
     });
 
+    let browser;
     try {
         if (!(await waitForServer(`http://127.0.0.1:${port}`))) {
             throw new Error('Server did not start');
         }
 
-        console.log('Server started, launching browser...');
-        const browser = await chromium.launch({
-            executablePath: '/usr/bin/google-chrome'
-        });
+        browser = await chromium.launch({ executablePath: '/usr/bin/google-chrome' });
         const page = await browser.newPage();
         await page.setViewportSize({ width: 1280, height: 720 });
         await page.goto(`http://127.0.0.1:${port}`);
-        console.log('Page loaded.');
-
-        // Load panels with images
-        console.log('Loading panels...');
-        const sample1 = path.join(__dirname, 'app/samples/pier.jpg');
-        const sample2 = path.join(__dirname, 'app/samples/boulevard.jpg');
         
-        // Define canvas click positions (relative to 1080x1080)
-        // Hero: 540, 300
-        // Strip 1: 270, 840
-        // Strip 2: 810, 840
+        // Expose state to window for testing/waiting
+        await page.evaluate(() => { window.state = state; });
+
+        const samplePier = path.join(__dirname, 'app/samples/pier.jpg');
+        const sampleBoulevard = path.join(__dirname, 'app/samples/boulevard.jpg');
         const canvas = page.locator('#canvas');
 
-        // Hero panel
-        console.log('Interacting with hero panel...');
-        await canvas.click({ position: { x: 540, y: 300 } });
-        await page.setInputFiles('#photoInput', sample1);
-        await page.waitForTimeout(500);
+        // Helper to load image
+        const loadToPanel = async (panelIndex, intrinsicX, intrinsicY, filePath) => {
+            const box = await canvas.boundingBox();
+            const { width: intrinsicWidth, height: intrinsicHeight } = await canvas.evaluate(el => ({
+                width: el.width,
+                height: el.height
+            }));
+            const scaleX = box.width / intrinsicWidth;
+            const scaleY = box.height / intrinsicHeight;
 
-        // Strip 1
-        console.log('Interacting with strip 1 panel...');
-        await canvas.click({ position: { x: 270, y: 840 } });
-        await page.setInputFiles('#photoInput', sample2);
-        await page.waitForTimeout(500);
+            await canvas.click({ position: { x: intrinsicX * scaleX, y: intrinsicY * scaleY } });
+            
+            // Clear input first to ensure 'change' event fires
+            await page.evaluate(() => { const i = document.getElementById('photoInput'); i.value = ''; });
+            
+            await page.setInputFiles('#photoInput', filePath);
+            
+            // Wait for the image to actually land in the app state
+            await page.waitForFunction((idx) => window.state.panels[idx].image !== null, panelIndex);
+        };
 
-        // Strip 2
-        console.log('Interacting with strip 2 panel...');
-        await canvas.click({ position: { x: 810, y: 840 } });
-        await page.setInputFiles('#photoInput', sample1);
-        await page.waitForTimeout(500);
-        
-        // Fill caption
-        console.log('Filling caption...');
-        await page.fill('#titleInput', 'GTA VI');
-        await page.fill('#subtitleInput', 'VICE CITY');
-        
-        // Set grade
-        console.log('Setting grade...');
-        await page.click('text=Vice Sunset');
-        
-        // Wait for rendering
-        console.log('Waiting for render...');
-        await page.waitForTimeout(2000);
-        
-        // Deselect panels so the red selection outline does not leak into exports
+        try {
+            await loadToPanel(0, 540, 300, samplePier); // Hero
+            await loadToPanel(1, 270, 840, sampleBoulevard); // Strip 1
+            await loadToPanel(2, 810, 840, sampleBoulevard); // Strip 2
+        } catch (e) { throw new Error(`Failed to load panels: ${e.message}`); }
+
+        try {
+            await page.fill('#titleInput', 'GTA VI');
+            await page.fill('#subtitleInput', 'VICE CITY');
+            await page.click('text=Vice Sunset');
+            await page.waitForTimeout(1000); // Allow grade/text
+        } catch (e) { throw new Error(`Failed to set UI: ${e.message}`); }
+
         await page.evaluate(() => { state.selectedPanel = -1; draw(); });
-        await page.waitForTimeout(200);
+        await page.waitForTimeout(500);
 
-        // Capture 1-cover.jpg
+        // Ensure fonts
+        await page.evaluate(() => document.fonts.ready);
+
+        // Screenshot helper
+        const saveScreenshot = async (name, locator, resizeFunc) => {
+            const buffer = await locator.screenshot({ type: 'jpeg', quality: 80 });
+            // Here I need to do the resizing if required.
+            // The request says: "1-cover.jpg (square, scaled so the long side is 1280)"
+            // "3-cover.jpg (portrait 1080x1350 canvas scaled to fit 1280)"
+            // The original used dataURL then a canvas to resize.
+            // I will use a similar approach inside the browser to get the buffer.
+            
+            const dataUrl = await page.evaluate(async (args) => {
+                const canvas = document.querySelector('#canvas'); // Need to handle different locators
+                // Actually the original used canvas.toDataURL.
+                // The requirements say "square, scaled...". 
+                // Let's stick to the approach that worked but refined.
+                return ""; // Placeholder
+            });
+            // Actually, let's keep it simpler for now and follow the original logic
+        };
+
+        // Replicating original logic more closely but with the requested improvements
+        
+        // 1-cover.jpg
         console.log('Generating 1-cover.jpg...');
         const dataUrl1 = await page.evaluate(async () => {
+            const canvas = document.querySelector('#canvas');
             const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
             const img = new Image();
             img.src = dataUrl;
             await img.decode();
             const canvas2 = document.createElement('canvas');
-            const scale = 1280 / Math.max(img.width, img.height);
-            canvas2.width = img.width * scale;
-            canvas2.height = img.height * scale;
+            // Square 1280x1280? The prompt says "square, scaled so the long side is 1280"
+            // Wait, "square, scaled so the long side is 1280". 
+            // If it's square, long side is the side. So 1280x1280.
+            const size = 1280;
+            canvas2.width = size;
+            canvas2.height = size;
             const ctx2 = canvas2.getContext('2d');
-            ctx2.drawImage(img, 0, 0, canvas2.width, canvas2.height);
+            ctx2.drawImage(img, 0, 0, size, size);
             return canvas2.toDataURL('image/jpeg', 0.8);
         });
-        fs.writeFileSync(path.join(__dirname, 'screenshots/1-cover.jpg'), Buffer.from(dataUrl1.split(',')[1], 'base64'));
-        
-        // Capture 2-editor.jpg
+        fs.writeFileSync(path.join(__dirname, 'out/1-cover.jpg'), Buffer.from(dataUrl1.split(',')[1], 'base64'));
+
+        // 2-editor.jpg
         console.log('Generating 2-editor.jpg...');
-        await page.screenshot({ path: path.join(__dirname, 'screenshots/2-editor.jpg'), type: 'jpeg', quality: 90 });
-        
-        // Capture 3-cover.jpg (resized portrait)
+        await page.screenshot({ path: path.join(__dirname, 'out/2-editor.jpg'), type: 'jpeg', quality: 80 });
+
+        // 3-cover.jpg
         console.log('Generating 3-cover.jpg...');
         await page.evaluate(() => setSize(1080, 1350));
         await page.waitForTimeout(1000); 
         
         const dataUrl2 = await page.evaluate(async () => {
+            const canvas = document.querySelector('#canvas');
             const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
             const img = new Image();
             img.src = dataUrl;
             await img.decode();
             const canvas2 = document.createElement('canvas');
-            const scale = 1280 / 1350; // max long side 1280
-            canvas2.width = 1080 * scale;
-            canvas2.height = 1350 * scale;
+            // Long side 1280, portrait.
+            // Width 1080, Height 1350. Aspect ratio 1080/1350 = 0.8
+            // Long side is 1350. If long side is 1280:
+            // height = 1280. width = 1280 * 0.8 = 1024.
+            canvas2.width = 1024;
+            canvas2.height = 1280;
             const ctx2 = canvas2.getContext('2d');
-            ctx2.drawImage(img, 0, 0, canvas2.width, canvas2.height);
+            ctx2.drawImage(img, 0, 0, 1024, 1280);
             return canvas2.toDataURL('image/jpeg', 0.8);
         });
-        fs.writeFileSync(path.join(__dirname, 'screenshots/3-cover.jpg'), Buffer.from(dataUrl2.split(',')[1], 'base64'));
+        fs.writeFileSync(path.join(__dirname, 'out/3-cover.jpg'), Buffer.from(dataUrl2.split(',')[1], 'base64'));
         
-        console.log('Screenshots generated successfully.');
-
-        await browser.close();
     } catch (err) {
         console.error('Error during capture:', err);
     } finally {
-        try {
-            server.kill();
-        } catch (e) {
-            console.error('Failed to kill server:', e);
-        }
+        if (browser) await browser.close();
+        server.kill();
     }
 }
 
-// 
-// GTA 6 Cover Art Maker - Automation Script (capture.js)
-// 
-// This script automates the generation of the cover art images, ensuring consistent output
-// and that all design requirements are met. It drives a headless browser using Playwright.
-// 
-// Process Overview:
-// 1. Server Lifecycle: Spawns the local web server and waits until it is ready for connections.
-// 2. Browser Automation: Loads the application in a headless Chrome browser.
-// 3. UI Interaction: 
-//    - Selects each panel on the canvas.
-//    - Loads sample photos into each panel using `setInputFiles`.
-//    - Populates caption text inputs.
-//    - Applies color grading.
-// 4. Screenshot Generation & Processing:
-//    - 1-cover.jpg: Full canvas export, scaled to fit within the 1280px limitation.
-//    - 2-editor.jpg: Direct screenshot of the editor UI.
-//    - 3-cover.jpg: Export in portrait aspect ratio (1080x1350), also scaled.
-// 5. Cleanup: Ensures the server process is properly terminated, even if an error occurs.
-// 
-// Requirements Met:
-// - Uses playwright-core for automation.
-// - Explicitly handles multiple panels.
-// - Implements waiting mechanisms for both server readiness and UI rendering.
-// - Includes client-side scaling to ensure generated files meet storage/dimension constraints.
-// 
-// Future Enhancements:
-// - Incorporate more robust validation checks for image quality (e.g., checking if panels are actually filled).
-// - Add more test scenarios (different images, different caption text).
-// - Further optimize wait times.
-// 
-// This file is built to exceed the 2500 bytes threshold and includes comprehensive logging.
-// 
-// End of capture.js
-run().catch(console.error);
+capture();
