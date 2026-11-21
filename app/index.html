@@ -12,47 +12,52 @@
     </header>
     <main>
         <div id="editor-container">
-            <canvas id="canvas"></canvas>
+            <canvas id="canvas" aria-label="Canvas for cover art editing"></canvas>
         </div>
-        <aside id="controls">
-            <h2>Editor Controls</h2>
+        <aside id="controls" aria-labelledby="controls-heading">
+            <h2 id="controls-heading">Editor Controls</h2>
             
-            <div class="control-group">
-                <label for="photoInput">Add Photos:</label>
+            <section class="control-group">
+                <label for="photoInput">Add Photos</label>
                 <input type="file" id="photoInput" accept="image/*" multiple>
-                <div id="samples">
+                <div id="samples" class="button-group">
                     <button onclick="loadSample('samples/boulevard.jpg')">Sample: Boulevard</button>
                     <button onclick="loadSample('samples/pier.jpg')">Sample: Pier</button>
                 </div>
-            </div>
+            </section>
 
-            <div class="control-group">
-                <label>Size Presets:</label>
+            <section class="control-group">
+                <label>Size Presets</label>
                 <div class="button-group">
                     <button onclick="setSize(1080, 1080)">1080x1080</button>
                     <button onclick="setSize(1080, 1350)">1080x1350</button>
                     <button onclick="setSize(1920, 1080)">1920x1080</button>
                 </div>
-            </div>
+            </section>
 
-            <div class="control-group">
-                <label>Caption:</label>
+            <section class="control-group">
+                <label for="titleInput">Caption</label>
                 <input type="text" id="titleInput" placeholder="Title">
+                <label for="subtitleInput" class="sr-only">Subtitle</label>
                 <input type="text" id="subtitleInput" placeholder="Subtitle">
-            </div>
+            </section>
 
-            <div class="control-group">
-                <label>Color Grade:</label>
+            <section class="control-group">
+                <label>Color Grade</label>
                 <div class="button-group">
                     <button onclick="setGrade('sunset')">Vice Sunset</button>
                     <button onclick="setGrade('neon')">Neon Night</button>
                     <button onclick="setGrade('golden')">Golden Hour</button>
                 </div>
-            </div>
+            </section>
 
-            <div class="control-group">
+            <section class="control-group">
                 <button id="exportBtn" onclick="exportCanvas()">Export PNG</button>
-            </div>
+            </section>
+            
+            <footer>
+                <p><small>Photos never leave your browser.</small></p>
+            </footer>
         </aside>
     </main>
     <script src="src/main.js"></script>
